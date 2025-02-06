@@ -1,13 +1,46 @@
-import os
 from difflib import SequenceMatcher
 
 import nltk
 import pandas
 import requests
 from bs4 import BeautifulSoup
-from dotenv import load_dotenv
 from flask import Flask, render_template, request
 from loguru import logger
+from pydantic_settings import BaseSettings
+
+# Global config
+# =============
+
+
+class Config(BaseSettings):
+    """Setting for webapp.
+
+    Loaded once on start app from .env file.
+    """
+
+    user_agent: str
+    search_link: str
+    cookie: str
+    black_list: str
+
+    # Flask settings
+    debug: bool
+    host: str
+    port: int
+
+
+URL_BLACKLIST = [
+    # Yandex black list
+    "https://passport.yandex.ru/",
+    "https://yandexwebcache.net/",
+    "https://yandex.ru/support/",
+    "https://cloud.yandex.ru/",
+    "https://yandex.ru/",
+    "https://www.ya.ru",
+]
+
+config = Config(_env_file=".env")
+URL_BLACKLIST.extend(config.black_list.split(", "))
 
 # tester
 # ======
@@ -69,31 +102,13 @@ def return_table(dictionary: dict) -> str:
 
 def search(query: str, num: int) -> list[str]:
     """Do a request and collecting result."""
-    user_agent = os.getenv("USER_AGENT")
-    search_link = os.getenv("SEARCH_LINK")
-    cookie = os.getenv("COOKIE")
-    user_black_list = os.getenv("BLACK_LIST").split(", ")
-
-    black_list = [
-        # Yandex black list
-        "https://passport.yandex.ru/",
-        "https://yandexwebcache.net/",
-        "https://yandex.ru/support/",
-        "https://cloud.yandex.ru/",
-        "https://yandex.ru/",
-        "https://www.ya.ru",
-    ]
-
-    black_list.extend(user_black_list)
-
-    url = f"{search_link}{query}"
     urls = []
 
     page = requests.get(
-        url,
+        url=f"{config.search_link}/{query}",
         headers={
-            "user-agent": user_agent,
-            "cookie": cookie,
+            "user-agent": config.user_agent,
+            "cookie": config.cookie,
         },
         timeout=20,
     )
@@ -104,7 +119,7 @@ def search(query: str, num: int) -> list[str]:
 
         black = False
         if url.startswith("http"):
-            for black_url in black_list:
+            for black_url in URL_BLACKLIST:
                 if black_url in url:
                     black = True
                     break
@@ -145,13 +160,4 @@ def report_page() -> str:
     )
 
 
-if __name__ == "__main__":
-    # Loading consts from .env
-    load_dotenv()
-
-    IS_DEBUG = os.getenv("DEBUG").lower() == "true"
-    HOST = os.getenv("HOST")
-    PORT = os.getenv("PORT")
-
-    # Starting flask app
-    app.run(debug=IS_DEBUG, host=HOST, port=PORT)
+app.run(debug=config.debug, host=config.host, port=config.port)
